@@ -11,6 +11,7 @@ import scipy.signal
 
 
 def am_to_pm(samples, scale=2**14):
+    # 12.5 kHz FM bandwidth vs. 1 MHz sample rate
     fm_samples = samples / scale * np.pi * 12500 / 1e6
     phase_prev = np.cumsum(fm_samples)
     fm_samples = (np.cos(phase_prev) + 1j * np.sin(phase_prev)) * scale
