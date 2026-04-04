@@ -11,23 +11,9 @@ import scipy.signal
 
 
 def am_to_pm(samples, scale=2**14):
-    phase_prev = 0
-    bar = Bar("AM to FM", max=samples.shape[0] // 1e6)
-    bar.start()
-
-    # fm_samples = am_samples / scale * np.pi * 12500 / 1e6
-
-    fm_samples = np.empty(samples.shape, dtype=complex)
-    for i, am_sample in enumerate(samples):
-        phase_inc = am_sample / scale
-        phase_prev += phase_inc * np.pi * 12500 / 1e6
-        # phase_prev %= 2 * np.pi
-        sample_i = np.cos(phase_prev)
-        sample_q = np.sin(phase_prev)
-        fm_samples[i] = complex(sample_i * scale, sample_q * scale)
-        if (i % 1e6) == 0:
-            bar.next()
-    bar.finish()
+    fm_samples = samples / scale * np.pi * 12500 / 1e6
+    phase_prev = np.cumsum(fm_samples)
+    fm_samples = (np.cos(phase_prev) + 1j * np.sin(phase_prev)) * scale
 
     return fm_samples
 
@@ -47,7 +33,7 @@ if __name__ == "__main__":
     data = data * 0.5
 
     # Only first few seconds
-    data = data[: int(2e6)]
+    data = data[: int(10e6)]
 
     # Convert to 1 MHz
     print("Resampling …")
