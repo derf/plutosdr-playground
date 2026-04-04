@@ -6,6 +6,7 @@ import time
 from progress.bar import Bar
 
 from scipy.io import wavfile
+import scipy.signal
 
 if __name__ == "__main__":
 
@@ -23,15 +24,8 @@ if __name__ == "__main__":
 
     samples = np.repeat(data, sdr_sample_rate // wav_sample_rate)
 
-    # samples = np.empty((data.shape[0] * 23,))
-    # bar = Bar("Converting", max=samples.shape[0] // 10000 )
-    # bar.start()
-    # for i in range(samples.shape[0]):
-    #    samples[i] = data[i//23]
-    #    if (i % 10000) == 0:
-    #        bar.next()
-    #
-    # bar.finish()
+    bb = scipy.signal.firwin(41, (10, 20000), pass_zero=False, fs=sdr_sample_rate)
+    samples = scipy.signal.lfilter(bb, [1], samples)
 
     sdr = adi.Pluto("ip:192.168.2.1")
     sample_rate = 1e6
@@ -43,7 +37,7 @@ if __name__ == "__main__":
     )  # filter cutoff, just set it to the same as sample rate
     sdr.tx_lo = int(center_freq)
     sdr.tx_hardwaregain_chan0 = (
-        -20
+        -15
     )  # Increase to increase tx power, valid range is -90 to 0 dB
 
     print("SDR configured, waiting 5 seconds before beginning transmission …")
