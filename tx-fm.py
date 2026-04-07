@@ -10,9 +10,8 @@ from scipy.io import wavfile
 import scipy.signal
 
 
-def am_to_pm(samples, scale=2**14):
-    # 12.5 kHz FM bandwidth vs. 1 MHz sample rate
-    fm_samples = samples / scale * np.pi * 12500 / 1e6
+def am_to_pm(samples, fm_bandwidth, sdr_sample_rate, scale=2**14):
+    fm_samples = samples / scale * np.pi * fm_bandwidth / sdr_sample_rate
     phase_prev = np.cumsum(fm_samples)
     fm_samples = (np.cos(phase_prev) + 1j * np.sin(phase_prev)) * scale
 
@@ -21,10 +20,15 @@ def am_to_pm(samples, scale=2**14):
 
 if __name__ == "__main__":
 
-    n_samples_per_tx = 10_000
+    fm_bandwidth = 12_500
+    n_samples_per_tx = 100_000
     sdr_sample_rate = 1e6
 
-    wav_sample_rate, data = wavfile.read(sys.argv[1])
+    if len(sys.argv) < 3:
+        print(f"Usage: {sys.argv[0]} <freq (MHz)> <wav file>")
+        sys.exit(1)
+
+    wav_sample_rate, data = wavfile.read(sys.argv[2])
 
     # Stereo → Mono
     if len(data.shape) == 2:
@@ -43,27 +47,31 @@ if __name__ == "__main__":
     )
 
     print("Band Pass …")
-    bb = scipy.signal.firwin(41, (10, 20000), pass_zero=False, fs=sdr_sample_rate)
+    bb = scipy.signal.firwin(
+        41, (20, fm_bandwidth / 2 - 1), pass_zero=False, fs=fm_bandwidth
+    )
     samples = scipy.signal.lfilter(bb, [1], samples)
 
-    fm_samples = am_to_pm(samples)
+    fm_samples = am_to_pm(samples, fm_bandwidth, sdr_sample_rate)
+    del samples
 
     sdr = adi.Pluto("ip:192.168.2.1")
     sample_rate = 1e6
-    center_freq = 144600e3
+    center_freq = float(sys.argv[1]) / 1e6
 
     sdr.sample_rate = int(sample_rate)
     sdr.tx_rf_bandwidth = int(
         sample_rate
     )  # filter cutoff, just set it to the same as sample rate
+
     sdr.tx_lo = int(center_freq)
-    sdr.tx_hardwaregain_chan0 = (
-        0  # Increase to increase tx power, valid range is -90 to 0 dB
-    )
 
-    print("SDR configured, waiting 5 seconds before beginning transmission …")
+    # Increase to increase tx power, valid range is -90 to 0 dB
+    sdr.tx_hardwaregain_chan0 = -10
 
-    time.sleep(5)
+    print("SDR configured, waiting 2 seconds before beginning transmission …")
+
+    time.sleep(2)
 
     bar = Bar("TX", max=fm_samples.shape[0] // n_samples_per_tx)
     bar.start()
