@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 
 import adi
+import argparse
 import numpy as np
+import scipy.io
+import scipy.signal
 import sys
 import time
 from progress.bar import Bar
-
-from scipy.io import wavfile
-import scipy.signal
 
 
 def am_to_pm(samples, fm_bandwidth, sdr_sample_rate, scale=2**14):
@@ -20,15 +20,37 @@ def am_to_pm(samples, fm_bandwidth, sdr_sample_rate, scale=2**14):
 
 if __name__ == "__main__":
 
-    fm_bandwidth = 12_500
-    n_samples_per_tx = 100_000
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--carrier", type=float, default=144.6, help="FM carrier frequency [MHz]"
+    )
+    parser.add_argument(
+        "--fm-bandwidth", type=float, default=12.5, help="FM bandwidth [kHz]"
+    )
+    parser.add_argument(
+        "--samples-per-tx",
+        type=int,
+        default=100_000,
+        help="# of samples per adi.Pluto TX call",
+    )
+    parser.add_argument(
+        "--pluto-connection",
+        type=str,
+        default="ip:192.168.2.1",
+        help="Connection to PlutoSDR",
+    )
+    parser.add_argument("--tx-power", type=int, help="TX Power [dB]; 0 ≙ 10 mW")
+    parser.add_argument(
+        "input", metavar="input.wav", type=str, help="Input file for transmission"
+    )
+
+    args = parser.parse_args()
+
+    fm_bandwidth = int(args.fm_bandwidth * 1e3)
+    n_samples_per_tx = args.samples_per_tx
     sdr_sample_rate = 1e6
 
-    if len(sys.argv) < 3:
-        print(f"Usage: {sys.argv[0]} <freq (MHz)> <wav file>")
-        sys.exit(1)
-
-    wav_sample_rate, data = wavfile.read(sys.argv[2])
+    wav_sample_rate, data = scipy.io.wavfile.read(args.input)
 
     # Stereo → Mono
     if len(data.shape) == 2:
@@ -38,7 +60,7 @@ if __name__ == "__main__":
     data = data * 0.5
 
     # Only first few seconds
-    data = data[: int(10e6)]
+    data = data[: int(1e6)]
 
     # Convert to 1 MHz
     print("Resampling …")
@@ -55,19 +77,17 @@ if __name__ == "__main__":
     fm_samples = am_to_pm(samples, fm_bandwidth, sdr_sample_rate)
     del samples
 
-    sdr = adi.Pluto("ip:192.168.2.1")
-    sample_rate = 1e6
-    center_freq = float(sys.argv[1]) / 1e6
+    sdr = adi.Pluto(args.pluto_connection)
 
-    sdr.sample_rate = int(sample_rate)
+    sdr.sample_rate = int(sdr_sample_rate)
     sdr.tx_rf_bandwidth = int(
-        sample_rate
+        sdr_sample_rate
     )  # filter cutoff, just set it to the same as sample rate
 
-    sdr.tx_lo = int(center_freq)
+    sdr.tx_lo = int(args.carrier * 1e6)
 
     # Increase to increase tx power, valid range is -90 to 0 dB
-    sdr.tx_hardwaregain_chan0 = -10
+    sdr.tx_hardwaregain_chan0 = args.tx_power
 
     print("SDR configured, waiting 2 seconds before beginning transmission …")
 
