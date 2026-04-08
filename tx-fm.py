@@ -9,15 +9,6 @@ import sys
 import time
 from progress.bar import Bar
 
-
-def am_to_pm(samples, fm_bandwidth, sdr_sample_rate, scale=2**14):
-    fm_samples = samples / scale * np.pi * fm_bandwidth / sdr_sample_rate
-    phase_prev = np.cumsum(fm_samples)
-    fm_samples = (np.cos(phase_prev) + 1j * np.sin(phase_prev)) * scale
-
-    return fm_samples
-
-
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
@@ -74,7 +65,11 @@ if __name__ == "__main__":
     )
     samples = scipy.signal.lfilter(bb, [1], samples)
 
-    fm_samples = am_to_pm(samples, fm_bandwidth, sdr_sample_rate)
+    scale = 2**14
+    fm_samples = samples / scale * np.pi * fm_bandwidth / sdr_sample_rate
+    phase_prev = np.cumsum(fm_samples)
+    fm_samples = (np.cos(phase_prev) + 1j * np.sin(phase_prev)) * scale
+
     del samples
 
     sdr = adi.Pluto(args.pluto_connection)
