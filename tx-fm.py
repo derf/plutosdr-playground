@@ -33,7 +33,19 @@ if __name__ == "__main__":
         default="ip:192.168.2.1",
         help="Connection to PlutoSDR",
     )
-    parser.add_argument("--tx-power", type=int, help="TX Power [dB]; 0 ≙ 10 mW")
+    parser.add_argument(
+        "--pluto-sample-rate",
+        type=int,
+        default=1_000_000,
+        help="PlutoSDR sample rate for transmission",
+    )
+    parser.add_argument(
+        "--tx-power",
+        type=int,
+        choices=list(range(-90, 1)),
+        default=-10,
+        help="TX Power [dB]; 0 ≙ 10 mW",
+    )
     parser.add_argument(
         "input", metavar="input.wav", type=str, help="Input file for transmission"
     )
@@ -42,7 +54,7 @@ if __name__ == "__main__":
 
     fm_deviation = int(args.fm_deviation * 1e3)
     n_samples_per_tx = args.samples_per_tx
-    sdr_sample_rate = 1e6
+    sdr_sample_rate = args.pluto_sample_rate
 
     wav_sample_rate, data = scipy.io.wavfile.read(args.input)
 
