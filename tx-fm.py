@@ -16,7 +16,10 @@ if __name__ == "__main__":
         "--carrier", type=float, default=144.6, help="FM carrier frequency [MHz]"
     )
     parser.add_argument(
-        "--fm-bandwidth", type=float, default=12.5, help="FM bandwidth [kHz]"
+        "--fm-deviation",
+        type=float,
+        default=12.5,
+        help="FM deviation [kHz]. Should be determined empirically.",
     )
     parser.add_argument(
         "--samples-per-tx",
@@ -37,7 +40,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    fm_bandwidth = int(args.fm_bandwidth * 1e3)
+    fm_deviation = int(args.fm_deviation * 1e3)
     n_samples_per_tx = args.samples_per_tx
     sdr_sample_rate = 1e6
 
@@ -61,12 +64,12 @@ if __name__ == "__main__":
 
     print("Band Pass …")
     bb = scipy.signal.firwin(
-        41, (20, fm_bandwidth / 2 - 1), pass_zero=False, fs=fm_bandwidth
+        41, (20, fm_deviation), pass_zero=False, fs=sdr_sample_rate
     )
     samples = scipy.signal.lfilter(bb, [1], samples)
 
     scale = 2**14
-    fm_samples = samples / scale * np.pi * fm_bandwidth / sdr_sample_rate
+    fm_samples = samples / scale * np.pi * fm_deviation / sdr_sample_rate
     phase_prev = np.cumsum(fm_samples)
     fm_samples = (np.cos(phase_prev) + 1j * np.sin(phase_prev)) * scale
 
