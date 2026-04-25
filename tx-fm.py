@@ -62,11 +62,11 @@ if __name__ == "__main__":
     if len(data.shape) == 2:
         data = data[:, 0]
 
-    # 16-bit signed to 15-bit signed
-    data = data * 0.5
+    # Normalize 16-bit signed input to -1 … 1
+    data = data / 2**15
 
     # Only first few seconds
-    data = data[: int(1e6)]
+    data = data[: int(5e6)]
 
     # Convert to 1 MHz
     print("Resampling …")
@@ -80,12 +80,14 @@ if __name__ == "__main__":
     )
     samples = scipy.signal.lfilter(bb, [1], samples)
 
-    scale = 2**14
-    fm_samples = samples / scale * np.pi * fm_deviation / sdr_sample_rate
-    phase_prev = np.cumsum(fm_samples)
-    fm_samples = (np.cos(phase_prev) + 1j * np.sin(phase_prev)) * scale
+    fm_samples = samples * np.pi * fm_deviation / sdr_sample_rate
+    phase_integral = np.cumsum(fm_samples)
+    fm_samples = np.cos(phase_integral) + 1j * np.sin(phase_integral)
 
     del samples
+
+    # PlutoSDR expects 15-bit signed input
+    fm_samples *= 2**14
 
     sdr = adi.Pluto(args.pluto_connection)
 
