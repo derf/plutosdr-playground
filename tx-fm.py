@@ -42,7 +42,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--tx-power",
         type=int,
-        choices=list(range(-90, 1)),
+        choices=list(range(-89, 1)),
         default=-10,
         help="TX Power [dB]; 0 ≙ 10 mW",
     )
@@ -112,3 +112,7 @@ if __name__ == "__main__":
         sdr.tx(fm_samples[i * n_samples_per_tx : (i + 1) * n_samples_per_tx])
         bar.next()
     bar.finish()
+
+    # The device seems to continue transmitting -something- even after the final tx call is over.
+    # Set its TX power to the minimum to make these emissions harmless.
+    sdr.tx_hardwaregain_chan0 = -89
