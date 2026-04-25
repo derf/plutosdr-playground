@@ -82,7 +82,7 @@ if __name__ == "__main__":
 
     fm_samples = samples * np.pi * fm_deviation / sdr_sample_rate
     phase_integral = np.cumsum(fm_samples)
-    fm_samples = np.cos(phase_integral) + 1j * np.sin(phase_integral)
+    fm_samples = np.exp(1j * phase_integral)
 
     del samples
 
