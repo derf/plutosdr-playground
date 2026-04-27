@@ -18,12 +18,39 @@
 
 import adi
 import argparse
+import multiprocessing
 import numpy as np
 import scipy.io
 import scipy.signal
 import sys
 import time
 from progress.bar import Bar
+
+
+def tx(queue, connection, sample_rate, carrier, tx_power, n_samples_per_tx, n_blocks):
+
+    sdr = adi.Pluto(connection)
+
+    sdr.sample_rate = int(sample_rate)
+    sdr.tx_rf_bandwidth = int(sample_rate)
+    sdr.tx_lo = int(carrier)
+    sdr.tx_hardwaregain_chan0 = tx_power
+
+    time.sleep(1)
+
+    bar = Bar("TX", max=n_blocks)
+    for i in range(n_blocks):
+        samples = queue.get()
+        if samples is None:
+            break
+        sdr.tx(samples)
+        bar.next()
+    bar.finish()
+
+    # The device seems to continue transmitting -something- even after the final tx call is over.
+    # Set its TX power to the minimum to make these emissions harmless.
+    sdr.tx_hardwaregain_chan0 = -89
+
 
 if __name__ == "__main__":
 
@@ -72,63 +99,57 @@ if __name__ == "__main__":
     n_samples_per_tx = args.samples_per_tx
     sdr_sample_rate = args.pluto_sample_rate
 
-    wav_sample_rate, data = scipy.io.wavfile.read(args.input)
+    wav_sample_rate, wav_data = scipy.io.wavfile.read(args.input)
 
     # Stereo → Mono
-    if len(data.shape) == 2:
-        data = data[:, 0]
+    if len(wav_data.shape) == 2:
+        wav_data = wav_data[:, 0]
 
     # Normalize 16-bit signed input to -1 … 1
-    data = data / 2**15
+    wav_data = wav_data / 2**15
 
-    # Only first few seconds
-    data = data[: int(5e6)]
-
-    # Convert to 1 MHz
-    print("Resampling …")
-    samples = scipy.signal.resample(
-        data, int(data.shape[0] * (sdr_sample_rate / wav_sample_rate))
+    context = multiprocessing.get_context("spawn")
+    queue = context.Queue()
+    tx_process = context.Process(
+        target=tx,
+        args=(
+            queue,
+            args.pluto_connection,
+            sdr_sample_rate,
+            args.carrier * 1e6,
+            args.tx_power,
+            n_samples_per_tx,
+            wav_data.shape[0] // 96_000,
+        ),
     )
+    tx_process.start()
 
-    print("Band Pass …")
     bb = scipy.signal.firwin(
         41, (20, fm_deviation), pass_zero=False, fs=sdr_sample_rate
     )
-    samples = scipy.signal.lfilter(bb, [1], samples)
 
-    fm_samples = samples * np.pi * fm_deviation / sdr_sample_rate
-    phase_integral = np.cumsum(fm_samples)
-    fm_samples = np.exp(1j * phase_integral)
+    phase_offset = 0
 
-    del samples
+    for i in range(wav_data.shape[0] // 96_000):
+        data = wav_data[i * 96_000 : (i + 1) * 96_000]
 
-    # PlutoSDR expects 15-bit signed input
-    fm_samples *= 2**14
+        # Convert to 1 MHz
+        samples = scipy.signal.resample(
+            data, int(data.shape[0] * (sdr_sample_rate / wav_sample_rate))
+        )
+        samples = scipy.signal.lfilter(bb, [1], samples)
 
-    sdr = adi.Pluto(args.pluto_connection)
+        fm_samples = samples * np.pi * fm_deviation / sdr_sample_rate
+        fm_samples[0] += phase_offset
 
-    sdr.sample_rate = int(sdr_sample_rate)
-    sdr.tx_rf_bandwidth = int(
-        sdr_sample_rate
-    )  # filter cutoff, just set it to the same as sample rate
+        phase_integral = np.cumsum(fm_samples)
+        phase_offset = phase_integral[-1] % (2 * np.pi)
 
-    sdr.tx_lo = int(args.carrier * 1e6)
+        fm_samples = np.exp(1j * phase_integral)
 
-    # Increase to increase tx power, valid range is -90 to 0 dB
-    sdr.tx_hardwaregain_chan0 = args.tx_power
+        # PlutoSDR expects 15-bit signed input
+        fm_samples *= 2**14
 
-    print("SDR configured, waiting 2 seconds before beginning transmission …")
+        queue.put(fm_samples)
 
-    time.sleep(2)
-
-    bar = Bar("TX", max=fm_samples.shape[0] // n_samples_per_tx)
-    bar.start()
-
-    for i in range(fm_samples.shape[0] // n_samples_per_tx):
-        sdr.tx(fm_samples[i * n_samples_per_tx : (i + 1) * n_samples_per_tx])
-        bar.next()
-    bar.finish()
-
-    # The device seems to continue transmitting -something- even after the final tx call is over.
-    # Set its TX power to the minimum to make these emissions harmless.
-    sdr.tx_hardwaregain_chan0 = -89
+    tx_process.join()
